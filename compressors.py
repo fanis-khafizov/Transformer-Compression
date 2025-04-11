@@ -88,9 +88,9 @@ class ImpK_b:
         }
         self.start = start
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
+    def update(self, batch, lr, eta, num_steps):
         for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
+            if 'ln' in name or 'bias' in name:
                 continue
             self.w[name] = mirror_descent(
                 model=self.model,
@@ -100,10 +100,9 @@ class ImpK_b:
                 eta=eta,
                 lambda_value=0.001,
                 num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
-                start=self.start
+                batch=batch,
+                start=self.start,
+                e=self.e[name]
             )
             # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
             # plt.show()
@@ -122,48 +121,47 @@ class ImpK_b:
 
         return compressed_tensor
 
-class ImpK_b_EF21:
-    def __init__(self, model, k, start='abs'):
-        self.model = model
-        self.k = k
-        self.g = {name: (imp := torch.zeros_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.w = {name: (imp := torch.ones_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.start = start
+# class ImpK_b_EF21:
+#     def __init__(self, model, k, start='abs'):
+#         self.model = model
+#         self.k = k
+#         self.g = {name: (imp := torch.zeros_like(param))
+#             for name, param in model.named_parameters()
+#         }
+#         self.w = {name: (imp := torch.ones_like(param))
+#             for name, param in model.named_parameters()
+#         }
+#         self.start = start
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
-                continue
-            self.w[name] = mirror_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                lambda_value=0.001,
-                num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
-                start=self.start,
-            )
+#     def update(self, batch, lr, eta, num_steps):
+#         for name, param in self.model.named_parameters():
+#             if 'bn' in name or 'shortcut.1' in name:
+#                 continue
+#             self.w[name] = mirror_descent(
+#                 model=self.model,
+#                 param_name=name,
+#                 impact=self.w[name],
+#                 lr=lr,
+#                 eta=eta,
+#                 lambda_value=0.001,
+#                 num_steps=num_steps,
+#                 batch=batch,
+#                 start=self.start,
+#                 e=self.e[name]
+#             )
 
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        tensor = (param.grad * self.w[name] - self.g[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor *= k / (self.w[name].flatten()[topk_indices].sum())
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        # update g
-        self.g[name] += compressed_tensor
-        return self.g[name]
+#     def compress(self, name, param):
+#         k = ceil(self.k * param.numel())
+#         tensor = (param.grad * self.w[name] - self.g[name]).view(-1)  # Flatten the tensor to a vector
+#         topk_values, topk_indices = tensor.abs().topk(k)
+#         mask = torch.zeros_like(tensor, dtype=torch.bool)
+#         mask.scatter_(0, topk_indices, True)
+#         compressed_tensor = tensor * mask
+#         compressed_tensor *= k / (self.w[name].flatten()[topk_indices].sum())
+#         compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
+#         # update g
+#         self.g[name] += compressed_tensor
+#         return self.g[name]
 
 class ImpK_b_EF:
     def __init__(self, model, k, start='abs'):
@@ -177,9 +175,9 @@ class ImpK_b_EF:
         }
         self.start = start
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
+    def update(self, batch, lr, eta, num_steps):
         for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
+            if 'ln' in name or 'bias' in name:
                 continue
             self.w[name] = mirror_descent(
                 model=self.model,
@@ -189,9 +187,7 @@ class ImpK_b_EF:
                 eta=eta,
                 lambda_value=0.001,
                 num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
+                batch=batch,
                 start=self.start,
                 e=self.e[name]
             )
@@ -226,9 +222,9 @@ class ImpK_c:
         self.start = start
         self.scale = scale
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
+    def update(self, batch, lr, eta, num_steps):
         for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
+            if 'ln' in name or 'bias' in name:
                 continue
             self.w[name] = gradient_descent(
                 model=self.model,
@@ -236,11 +232,11 @@ class ImpK_c:
                 impact=self.w[name],
                 lr=lr,
                 eta=eta,
+                lambda_value=0.001,
                 num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
+                batch=batch,
                 start=self.start,
+                e=self.e[name],
                 scale=self.scale
             )
             # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
@@ -262,52 +258,52 @@ class ImpK_c:
 
         return compressed_tensor
 
-class ImpK_c_EF21:
-    def __init__(self, model, k, start='ones', scale=1.0):
-        self.model = model
-        self.k = k
-        self.g = {name: (imp := torch.zeros_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.w = {name: (imp := torch.ones_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.start = start
-        self.scale = scale
+# class ImpK_c_EF21:
+#     def __init__(self, model, k, start='ones', scale=1.0):
+#         self.model = model
+#         self.k = k
+#         self.g = {name: (imp := torch.zeros_like(param))
+#             for name, param in model.named_parameters()
+#         }
+#         self.w = {name: (imp := torch.ones_like(param))
+#             for name, param in model.named_parameters()
+#         }
+#         self.start = start
+#         self.scale = scale
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
-                continue
-            self.w[name] = gradient_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
-                start=self.start,
-                scale=self.scale
-            )
+#     def update(self, batch, lr, eta, num_steps):
+#         for name, param in self.model.named_parameters():
+#             if 'bn' in name or 'shortcut.1' in name:
+#                 continue
+#             self.w[name] = gradient_descent(
+#                 model=self.model,
+#                 param_name=name,
+#                 impact=self.w[name],
+#                 lr=lr,
+#                 eta=eta,
+#                 lambda_value=0.001,
+#                 num_steps=num_steps,
+#                 batch=batch,
+#                 start=self.start,
+#                 e=self.e[name],
+#                 scale=self.scale
+#             )
             # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
             # plt.show()
             # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
 
 
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        tensor = (param.grad * self.w[name] - self.g[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        # update g
-        self.g[name] += compressed_tensor
-        return self.g[name]
+    # def compress(self, name, param):
+    #     k = ceil(self.k * param.numel())
+    #     tensor = (param.grad * self.w[name] - self.g[name]).view(-1)  # Flatten the tensor to a vector
+    #     topk_values, topk_indices = tensor.abs().topk(k)
+    #     mask = torch.zeros_like(tensor, dtype=torch.bool)
+    #     mask.scatter_(0, topk_indices, True)
+    #     compressed_tensor = tensor * mask
+    #     compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
+    #     # update g
+    #     self.g[name] += compressed_tensor
+    #     return self.g[name]
 
 class ImpK_c_EF:
     def __init__(self, model, k, start='ones', scale=1.0):
@@ -322,9 +318,9 @@ class ImpK_c_EF:
         self.start = start
         self.scale = scale
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
+    def update(self, batch, lr, eta, num_steps):
         for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
+            if 'ln' in name or 'bias' in name:
                 continue
             self.w[name] = gradient_descent(
                 model=self.model,
@@ -332,11 +328,11 @@ class ImpK_c_EF:
                 impact=self.w[name],
                 lr=lr,
                 eta=eta,
+                lambda_value=0.001,
                 num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
+                batch=batch,
                 start=self.start,
+                e=self.e[name],
                 scale=self.scale
             )
             # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
@@ -377,9 +373,9 @@ class SCAM_b_EF:
         }
         self.start = start
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
+    def update(self, batch, lr, eta, num_steps):
         for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
+            if 'ln' in name or 'bias' in name:
                 continue
             self.w[name] = mirror_descent(
                 model=self.model,
@@ -389,9 +385,7 @@ class SCAM_b_EF:
                 eta=eta,
                 lambda_value=0.001,
                 num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
+                batch=batch,
                 start=self.start,
                 e=self.e[name]
             )
@@ -431,9 +425,9 @@ class SCAM_c_EF:
         self.start = start
         self.scale = scale
 
-    def update(self, X_train, y_train, criterion, lr, eta, num_steps):
+    def update(self, batch, lr, eta, num_steps):
         for name, param in self.model.named_parameters():
-            if 'bn' in name or 'shortcut.1' in name:
+            if 'ln' in name or 'bias' in name:
                 continue
             self.w[name] = gradient_descent(
                 model=self.model,
@@ -442,9 +436,7 @@ class SCAM_c_EF:
                 lr=lr,
                 eta=eta,
                 num_steps=num_steps,
-                X_train=X_train,
-                y_train=y_train,
-                criterion=criterion,
+                batch=batch,
                 start=self.start,
                 scale=self.scale
             )

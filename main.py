@@ -15,21 +15,21 @@ from torch.optim import AdamW
 
 if __name__ == "__main__":
     train_inputs, val_inputs, test_inputs = get_datasets()
-    trainloader = DataLoader(train_inputs, batch_size=3, shuffle=True)
+    trainloader = DataLoader(train_inputs, batch_size=1, shuffle=True)
     testloader = DataLoader(val_inputs, batch_size=1, shuffle=False)
     device = get_device()
 
     config = {
         'param_usage': 0.01,
         'num_restarts': 1,
-        'num_epochs': 20,
+        'num_epochs': 25,
     }
 
     compress_configs = [
-        {
-            'compression_type': 'TopK',
-            'lr': 0.0001,
-        },
+        # {
+        #     'compression_type': 'TopK',
+        #     'lr': 0.005,
+        # },
         # {
         #     'compression_type': 'TopK',
         #     'lr': 0.01,
@@ -39,17 +39,21 @@ if __name__ == "__main__":
         #     'lr': 0.02,
         # },
         # {
-        #     'compression_type': 'TopK',
-        #     'lr': 0.05,
+        #     'compression_type': 'TopK_EF',
+        #     'lr': 0.005,
         # },
         # {
         #     'compression_type': 'TopK_EF',
         #     'lr': 0.01,
         # },
         # {
+        #     'compression_type': 'TopK_EF',
+        #     'lr': 0.02,
+        # },
+        # {
         #     'compression_type': 'ImpK_b_EF',
         #     'start': 'ones',
-        #     'lr': 0.001,
+        #     'lr': 0.01,
         #     'eta': 1000000.,
         #     'num_steps': 25,
         # },

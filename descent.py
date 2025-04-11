@@ -1,12 +1,12 @@
 import torch
 from torch.func import functional_call
 
-def mirror_descent(model, X_train, y_train, param_name, impact, lr, eta, lambda_value, num_steps, criterion, start=None, e=None):
+def mirror_descent(model, batch, param_name, impact, lr, eta, lambda_value, num_steps, start=None, e=None):
 
     original_param = dict(model.named_parameters())[param_name]
 
-    outputs = model(X_train)
-    loss = criterion(outputs, y_train)
+    outputs = model(batch, labels=batch)
+    loss = outputs.loss
     
     if e is None:
         param_grad = torch.autograd.grad(loss, original_param)[0]
@@ -15,7 +15,7 @@ def mirror_descent(model, X_train, y_train, param_name, impact, lr, eta, lambda_
     
     if start == 'ones':
         with torch.no_grad():
-            impact = torch.ones_like(param_grad) / param_grad.numel()
+            impact = torch.ones_like(param_grad)
     
     impact = impact.detach().requires_grad_(True)
 
@@ -26,16 +26,16 @@ def mirror_descent(model, X_train, y_train, param_name, impact, lr, eta, lambda_
         param_new = original_param - lr * impact * param_grad.detach()
         new_params[param_name] = param_new
         # Compute outputs with new parameters
-        outputs_new = functional_call(model, new_params, (X_train,))
+        outputs_new = functional_call(model, new_params, batch, kwargs={'labels': batch})
         # Compute new loss
-        loss_new = criterion(outputs_new, y_train)
+        loss_new = outputs_new.loss
 
         # Compute gradient of new loss w.r.t. impact
         grad_impact = torch.autograd.grad(loss_new, impact)[0]
 
         with torch.no_grad():
             impact_update = torch.pow(impact, 1/(1+eta*lambda_value)).detach() * torch.exp(-(eta/(1+eta*lambda_value)) * (grad_impact))
-            impact = impact_update / impact_update.sum()
+            impact = impact_update / impact_update.sum() * impact.numel()
 
         # Ensure impact requires grad for the next iteration
         impact.requires_grad_(True)
@@ -43,12 +43,12 @@ def mirror_descent(model, X_train, y_train, param_name, impact, lr, eta, lambda_
     return impact.detach()
 
 
-def gradient_descent(model, X_train, y_train, param_name, impact, lr, eta, num_steps, criterion, start=None, scale=1.0):
+def gradient_descent(model, batch, param_name, impact, lr, eta, num_steps, start=None, scale=1.0):
     
     original_param = dict(model.named_parameters())[param_name]
 
-    outputs = model(X_train)
-    loss = criterion(outputs, y_train)
+    outputs = model(batch, labels=batch)
+    loss = outputs.loss
     param_grad = torch.autograd.grad(loss, original_param, retain_graph=True, create_graph=True)[0]
 
     if start == 'topk':
@@ -70,9 +70,9 @@ def gradient_descent(model, X_train, y_train, param_name, impact, lr, eta, num_s
         # Create new parameter dictionary
         new_params[param_name] = param_new
         # Compute outputs with new parameters
-        outputs_new = functional_call(model, new_params, (X_train,))
+        outputs_new = functional_call(model, new_params, batch, labels=batch)
         # Compute new loss
-        loss_new = criterion(outputs_new, y_train)
+        loss_new = outputs.loss
 
         # Compute gradient of new loss w.r.t. impact
         grad_impact = torch.autograd.grad(loss_new, impact)[0]
