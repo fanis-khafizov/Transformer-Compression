@@ -70,9 +70,9 @@ def gradient_descent(model, batch, param_name, impact, lr, eta, num_steps, start
         # Create new parameter dictionary
         new_params[param_name] = param_new
         # Compute outputs with new parameters
-        outputs_new = functional_call(model, new_params, batch, labels=batch)
+        outputs_new = functional_call(model, new_params, batch, kwargs={'labels': batch})
         # Compute new loss
-        loss_new = outputs.loss
+        loss_new = outputs_new.loss
 
         # Compute gradient of new loss w.r.t. impact
         grad_impact = torch.autograd.grad(loss_new, impact)[0]
