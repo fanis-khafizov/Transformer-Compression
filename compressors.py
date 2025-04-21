@@ -1,472 +1,120 @@
 from math import ceil
 from matplotlib import pyplot as plt
 import torch
-from descent import gradient_descent, mirror_descent
+from descent import gradient_descent, mirror_descent, gradient_descent_full, mirror_descent_full
 
-class TopK:
-    def __init__(self, k):
-        self.k = k
-    
-    def update(self, *args, **kwargs):
-        pass
-
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        tensor = param.grad.view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        return compressed_tensor
-
-
-class TopK_EF21:
-    def __init__(self, k, model):
-        self.k = k
-        self.g = {name: torch.zeros_like(param) for name, param in model.named_parameters() if param.requires_grad}
-    
-    def update(self, *args, **kwargs):
-        pass
-
-    def compress(self, name, param):
-        # compression of difference
-        k = ceil(self.k * param.numel())
-        tensor = (param.grad - self.g[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        # update g
-        self.g[name] += compressed_tensor
-        return self.g[name]
-
-class TopK_EF:
-    def __init__(self, k, model):
-        self.k = k
-        self.e = {name: torch.zeros_like(param) for name, param in model.named_parameters() if param.requires_grad}
-    
-    def update(self, *args, **kwargs):
-        pass
-
-    def compress(self, name, param):
-        # compression of difference
-        k = ceil(self.k * param.numel())
-        tensor = (param.grad + self.e[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        # update e
-        self.e[name] += param.grad - compressed_tensor
-        return compressed_tensor
-
-class RandK:
-    def __init__(self, k):
-        self.k = k
-    
-    def update(self, *args, **kwargs):
-        pass
-
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        tensor = param.grad
-        mask = torch.randperm(tensor.numel()) < k
-        mask = mask.view(tensor.size())
-        compressed_tensor = tensor * mask
-        return compressed_tensor
-
-
-class ImpK_b:
-    def __init__(self, model, k, start='ones'):
+# Generic configurable compressor to select strategy, error correction, and update task
+class Compressor:
+    def __init__(self, model, k, strategy='TopK', error_correction='none', update_task=None, update_kwargs=None):
         self.model = model
         self.k = k
-        self.w = {name: torch.ones_like(param) / param.numel()
-            for name, param in model.named_parameters()
-        }
-        self.start = start
+        self.strategy = strategy
+        self.error_correction = error_correction
+        self.update_task = update_task
+        self.update_kwargs = update_kwargs or {}
+        self.w = {}
+        self.e = {}
+        self.g = {}
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            self.w[name] = torch.ones_like(param)
+            if self.error_correction == 'EF':
+                self.e[name] = torch.zeros_like(param)
+            elif self.error_correction == 'EF21':
+                self.g[name] = torch.zeros_like(param)
+
+    def skip(self, name):
+        return 'ln' in name
 
     def update(self, batch, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'ln' in name or 'bias' in name:
-                continue
-            self.w[name] = mirror_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                lambda_value=0.001,
-                num_steps=num_steps,
-                batch=batch,
-                start=self.start,
-                e=self.e[name]
+        if not self.update_task:
+            return
+        # full update across all parameters
+        if self.update_task in ('mirror_descent_full', 'gradient_descent_full'):
+            update_fn = {
+                'mirror_descent_full': mirror_descent_full,
+                'gradient_descent_full': gradient_descent_full
+            }[self.update_task]
+            # call full-impact update
+            # include error buffer if EF
+            full_kwargs = dict(self.update_kwargs)
+            if self.error_correction == 'EF':
+                full_kwargs['errors'] = self.e
+            self.w = update_fn(
+                self.model,
+                batch,
+                self.w,
+                lr,
+                eta,
+                **full_kwargs,
+                num_steps=num_steps
             )
-            # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
-            # plt.show()
-            # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
+            return
+        # per-parameter update
+        update_fn = {
+            'mirror_descent': mirror_descent,
+            'gradient_descent': gradient_descent
+        }[self.update_task]
+        for name, param in self.model.named_parameters():
+            if self.skip(name):
+                continue
+            impact = self.w[name]
+            # call per-parameter update with possible EF buffer
+            per_kwargs = dict(self.update_kwargs)
+            if self.error_correction == 'EF':
+                per_kwargs['error'] = self.e[name]
+            self.w[name] = update_fn(
+                self.model,
+                batch,
+                name,
+                impact,
+                lr,
+                eta,
+                **per_kwargs,
+                num_steps=num_steps
+            )
 
     def compress(self, name, param):
+        if self.skip(name):
+            return torch.zeros_like(param.grad)
         k = ceil(self.k * param.numel())
+        grad = param.grad
+        if self.error_correction == 'EF':
+            grad = grad + self.e[name]
+        elif self.error_correction == 'EF21':
+            grad = grad - self.g[name]
 
-        tensor = (param.grad * self.w[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor *= k / (self.w[name].flatten()[topk_indices].sum())
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-
-        return compressed_tensor
-
-# class ImpK_b_EF21:
-#     def __init__(self, model, k, start='abs'):
-#         self.model = model
-#         self.k = k
-#         self.g = {name: (imp := torch.zeros_like(param))
-#             for name, param in model.named_parameters()
-#         }
-#         self.w = {name: (imp := torch.ones_like(param))
-#             for name, param in model.named_parameters()
-#         }
-#         self.start = start
-
-#     def update(self, batch, lr, eta, num_steps):
-#         for name, param in self.model.named_parameters():
-#             if 'bn' in name or 'shortcut.1' in name:
-#                 continue
-#             self.w[name] = mirror_descent(
-#                 model=self.model,
-#                 param_name=name,
-#                 impact=self.w[name],
-#                 lr=lr,
-#                 eta=eta,
-#                 lambda_value=0.001,
-#                 num_steps=num_steps,
-#                 batch=batch,
-#                 start=self.start,
-#                 e=self.e[name]
-#             )
-
-#     def compress(self, name, param):
-#         k = ceil(self.k * param.numel())
-#         tensor = (param.grad * self.w[name] - self.g[name]).view(-1)  # Flatten the tensor to a vector
-#         topk_values, topk_indices = tensor.abs().topk(k)
-#         mask = torch.zeros_like(tensor, dtype=torch.bool)
-#         mask.scatter_(0, topk_indices, True)
-#         compressed_tensor = tensor * mask
-#         compressed_tensor *= k / (self.w[name].flatten()[topk_indices].sum())
-#         compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-#         # update g
-#         self.g[name] += compressed_tensor
-#         return self.g[name]
-
-class ImpK_b_EF:
-    def __init__(self, model, k, start='abs'):
-        self.model = model
-        self.k = k
-        self.e = {name: (imp := torch.zeros_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.w = {name: (imp := torch.ones_like(param)) / param.numel()
-            for name, param in model.named_parameters()
-        }
-        self.start = start
-
-    def update(self, batch, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'ln' in name or 'bias' in name:
-                continue
-            self.w[name] = mirror_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                lambda_value=0.001,
-                num_steps=num_steps,
-                batch=batch,
-                start=self.start,
-                e=self.e[name]
-            )
-            # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
-            # plt.show()
-            # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
-
-
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        
-        tensor = ((param.grad + self.e[name]) * self.w[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor *= k / (self.w[name].flatten()[topk_indices].sum())
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        # update e
-        self.e[name] += param.grad - compressed_tensor
-
-        return compressed_tensor
-
-
-class ImpK_c:
-    def __init__(self, model, k, start='ones', scale=1.0):
-        self.model = model
-        self.k = k
-        self.w = {name: (imp := torch.ones_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.start = start
-        self.scale = scale
-
-    def update(self, batch, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'ln' in name or 'bias' in name:
-                continue
-            self.w[name] = gradient_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                lambda_value=0.001,
-                num_steps=num_steps,
-                batch=batch,
-                start=self.start,
-                e=self.e[name],
-                scale=self.scale
-            )
-            # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
-            # plt.show()
-            # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
-
-
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-
-        tensor = (param.grad * self.w[name]).view(-1) # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        
-        # Apply mask to tensor
-        compressed_tensor = tensor * mask
-        compressed_tensor = compressed_tensor.view(param.grad.size())
-
-        return compressed_tensor
-
-# class ImpK_c_EF21:
-#     def __init__(self, model, k, start='ones', scale=1.0):
-#         self.model = model
-#         self.k = k
-#         self.g = {name: (imp := torch.zeros_like(param))
-#             for name, param in model.named_parameters()
-#         }
-#         self.w = {name: (imp := torch.ones_like(param))
-#             for name, param in model.named_parameters()
-#         }
-#         self.start = start
-#         self.scale = scale
-
-#     def update(self, batch, lr, eta, num_steps):
-#         for name, param in self.model.named_parameters():
-#             if 'bn' in name or 'shortcut.1' in name:
-#                 continue
-#             self.w[name] = gradient_descent(
-#                 model=self.model,
-#                 param_name=name,
-#                 impact=self.w[name],
-#                 lr=lr,
-#                 eta=eta,
-#                 lambda_value=0.001,
-#                 num_steps=num_steps,
-#                 batch=batch,
-#                 start=self.start,
-#                 e=self.e[name],
-#                 scale=self.scale
-#             )
-            # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
-            # plt.show()
-            # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
-
-
-    # def compress(self, name, param):
-    #     k = ceil(self.k * param.numel())
-    #     tensor = (param.grad * self.w[name] - self.g[name]).view(-1)  # Flatten the tensor to a vector
-    #     topk_values, topk_indices = tensor.abs().topk(k)
-    #     mask = torch.zeros_like(tensor, dtype=torch.bool)
-    #     mask.scatter_(0, topk_indices, True)
-    #     compressed_tensor = tensor * mask
-    #     compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-    #     # update g
-    #     self.g[name] += compressed_tensor
-    #     return self.g[name]
-
-class ImpK_c_EF:
-    def __init__(self, model, k, start='ones', scale=1.0):
-        self.model = model
-        self.k = k
-        self.e = {name: (imp := torch.zeros_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.w = {name: (imp := torch.ones_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.start = start
-        self.scale = scale
-
-    def update(self, batch, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'ln' in name or 'bias' in name:
-                continue
-            self.w[name] = gradient_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                lambda_value=0.001,
-                num_steps=num_steps,
-                batch=batch,
-                start=self.start,
-                e=self.e[name],
-                scale=self.scale
-            )
-            # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
-            # plt.show()
-            # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
-
-
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        
-        tensor = ((param.grad + self.e[name]) * self.w[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor, dtype=torch.bool)
-        mask.scatter_(0, topk_indices, True)
-        compressed_tensor = tensor * mask
-        compressed_tensor *= k / (self.w[name].flatten()[topk_indices].sum())
-        compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        # update e
-        self.e[name] += param.grad - compressed_tensor
-
-        return compressed_tensor
-    
-    
-    
-    
-
-######## SCAM - Stochastic Conditional Accelerated Method
-
-class SCAM_b_EF:
-    def __init__(self, model, k, start='abs'):
-        self.model = model
-        self.k = k
-        self.e = {name: (imp := torch.zeros_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.w = {name: (imp := torch.ones_like(param)) / param.numel()
-            for name, param in model.named_parameters()
-        }
-        self.start = start
-
-    def update(self, batch, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'ln' in name or 'bias' in name:
-                continue
-            self.w[name] = mirror_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                lambda_value=0.001,
-                num_steps=num_steps,
-                batch=batch,
-                start=self.start,
-                e=self.e[name]
-            )
-            # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
-            # plt.show()
-            # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
-
-
-    def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        
-        tensor = ((param.grad + self.e[name]) * self.w[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor)
-        mask[topk_indices] = self.w[name].flatten()[topk_indices]
-        mask *= k / mask.sum()
-        
-        param_grad_copy = param.grad.clone()
-        compressed_tensor = param_grad_copy * mask.reshape(param.shape)
-        compressed_tensor = compressed_tensor.reshape(param.shape)  # Reshape back to original size
-        # update e
-        self.e[name] += param_grad_copy - compressed_tensor
-        return compressed_tensor
-    
-    
-
-class SCAM_c_EF:
-    def __init__(self, model, k, start='ones', scale=1.0):
-        self.model = model
-        self.k = k
-        self.e = {name: (imp := torch.zeros_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.w = {name: (imp := torch.ones_like(param))
-            for name, param in model.named_parameters()
-        }
-        self.start = start
-        self.scale = scale
-
-    def update(self, batch, lr, eta, num_steps):
-        for name, param in self.model.named_parameters():
-            if 'ln' in name or 'bias' in name:
-                continue
-            self.w[name] = gradient_descent(
-                model=self.model,
-                param_name=name,
-                impact=self.w[name],
-                lr=lr,
-                eta=eta,
-                num_steps=num_steps,
-                batch=batch,
-                start=self.start,
-                scale=self.scale
-            )
-            # plt.hist(self.w[name].cpu().detach().flatten(), bins=50, label=name)
-            # plt.show()
-            # print(f'{name} min: {self.w[name].min():.5f}, max: {self.w[name].max():.5f}, min/max: {self.w[name].min()/self.w[name].max():.3f}')
-
-
-    def compress(self, name, param):
-        # k = int(self.k * param.numel())
-        # tensor = (param.grad * self.w[name] + self.e[name]).view(-1)  # Flatten the tensor to a vector
-        # topk_values, topk_indices = tensor.abs().topk(k)
-        # mask = torch.zeros_like(tensor, dtype=torch.bool)
-        # mask.scatter_(0, topk_indices, True)
-        # compressed_tensor = tensor * mask
-        # compressed_tensor = compressed_tensor.view(param.grad.size())  # Reshape back to original size
-        # # update e
-        # self.e[name] += param.grad - compressed_tensor
-        # return compressed_tensor
-        k = ceil(self.k * param.numel())
-        
-        tensor = ((param.grad + self.e[name]) * self.w[name]).view(-1)  # Flatten the tensor to a vector
-        topk_values, topk_indices = tensor.abs().topk(k)
-        mask = torch.zeros_like(tensor)
-        mask[topk_indices] = self.w[name].flatten()[topk_indices]
-        # mask *= k / mask.sum()
-        
-        param_grad_copy = param.grad.clone()
-        compressed_tensor = param_grad_copy * mask.reshape(param.shape)
-        compressed_tensor = compressed_tensor.reshape(param.shape)  # Reshape back to original size
-        # update e
-        self.e[name] += param_grad_copy - compressed_tensor
-        return compressed_tensor
+        # apply strategy
+        if self.strategy == 'TopK':
+            flat = grad.view(-1)
+            topk_vals, topk_idx = flat.abs().topk(k)
+            mask = torch.zeros_like(flat, dtype=torch.bool)
+            mask.scatter_(0, topk_idx, True)
+            comp = mask.view(param.grad.size()) * grad
+        elif self.strategy == 'ImpK':
+            weighted_grad = grad * self.w[name]
+            flat = weighted_grad.view(-1)
+            topk_vals, topk_idx = flat.abs().topk(k)
+            mask = torch.zeros_like(flat, dtype=torch.bool)
+            mask.scatter_(0, topk_idx, True)
+            comp_flat = flat * mask
+            comp_flat = comp_flat * (k / self.w[name].view(-1)[topk_idx].sum())
+            comp = comp_flat.view(param.grad.size())
+        elif self.strategy == 'SCAM':
+            weighted_grad = grad * self.w[name]
+            flat = weighted_grad.view(-1)
+            topk_vals, topk_idx = flat.abs().topk(k)
+            mask = torch.zeros_like(flat)
+            mask[topk_idx] = self.w[name].view(-1)[topk_idx]
+            mask = mask * (k / mask.sum())
+            comp = param.grad.clone() * mask.view(param.grad.size())
+        else:
+            raise ValueError(f"Unknown strategy {self.strategy}")
+        # update error buffers
+        if self.error_correction == 'EF':
+            self.e[name] += param.grad - comp
+        elif self.error_correction == 'EF21':
+            self.g[name] += comp
+            return self.g[name]
+        return comp

@@ -15,6 +15,7 @@ def train(model, optimizer, compressor, trainloader, testloader, num_epochs, lr,
             batch = batch.to(device)
 
             if batch_idx == 0:
+                # Обновляем компрессор с новым интерфейсом
                 compressor.update(batch, lr, eta, num_steps)
             
             optimizer.zero_grad()
