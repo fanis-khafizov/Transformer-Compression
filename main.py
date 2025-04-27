@@ -15,14 +15,14 @@ from torch.optim import AdamW
 
 if __name__ == "__main__":
     train_inputs, val_inputs, test_inputs = get_datasets()
-    trainloader = DataLoader(train_inputs, batch_size=1, shuffle=True)
+    trainloader = DataLoader(train_inputs, batch_size=16, shuffle=True)
     testloader = DataLoader(val_inputs, batch_size=1, shuffle=False)
     device = get_device()
 
     config = {
         'param_usage': 0.01,
         'num_restarts': 1,
-        'num_epochs': 1,
+        'num_epochs': 2,
     }
 
     compress_configs = [
@@ -175,7 +175,7 @@ if __name__ == "__main__":
     log_file = os.path.join(log_dir, f"training_log_{date}.csv")
 
     with open(log_file, 'w', newline='') as csvfile:
-        fieldnames = ['type', 'train_log', 'train_acc', 'test_log', 'test_acc', 'epoch']
+        fieldnames = ['type', 'train_log', 'train_ppl', 'test_log', 'test_ppl', 'epoch']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -195,9 +195,9 @@ if __name__ == "__main__":
                         'type': name,
                         'epoch': epoch,
                         'train_log': train_log[dict_name][restart][epoch],
-                        'train_acc': train_ppl_log[dict_name][restart][epoch],
+                        'train_ppl': train_ppl_log[dict_name][restart][epoch],
                         'test_log': test_log[dict_name][restart][epoch],
-                        'test_acc': test_ppl_log[dict_name][restart][epoch]
+                        'test_ppl': test_ppl_log[dict_name][restart][epoch]
                     })
 
     fig_train, axs_train = plt.subplots(1, 2, figsize=(16, 7))
