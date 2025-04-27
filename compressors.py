@@ -50,12 +50,6 @@ class Compressor:
                 **full_kwargs,
                 num_steps=num_steps
             )
-            for name, param in self.model.named_parameters():
-                if self.skip(name):
-                    continue
-                plt.title(f"Impact for {name}")
-                plt.hist(self.w[name].view(-1).detach().cpu())
-                plt.show()
             return
         # per-parameter update
         update_fn = {
@@ -82,43 +76,45 @@ class Compressor:
             )
 
     def compress(self, name, param):
-        k = ceil(self.k * param.numel())
-        grad = param.grad
-        if self.error_correction == 'EF':
-            grad = grad + self.e[name]
-        elif self.error_correction == 'EF21':
-            grad = grad - self.g[name]
+        with torch.no_grad():
+            k = ceil(self.k * param.numel())
+            grad = param.grad.detach()
+            if self.error_correction == 'EF':
+                grad = grad + self.e[name]
+            elif self.error_correction == 'EF21':
+                grad = grad - self.g[name]
 
-        # apply strategy
-        if self.strategy == 'TopK':
-            flat = grad.view(-1)
-            topk_vals, topk_idx = flat.abs().topk(k)
-            mask = torch.zeros_like(flat, dtype=torch.bool)
-            mask.scatter_(0, topk_idx, True)
-            comp = mask.view(param.grad.size()) * grad
-        elif self.strategy == 'ImpK':
-            weighted_grad = grad * self.w[name]
-            flat = weighted_grad.view(-1)
-            topk_vals, topk_idx = flat.abs().topk(k)
-            mask = torch.zeros_like(flat, dtype=torch.bool)
-            mask.scatter_(0, topk_idx, True)
-            comp_flat = flat * mask
-            comp_flat = comp_flat * (k / self.w[name].view(-1)[topk_idx].sum())
-            comp = comp_flat.view(param.grad.size())
-        elif self.strategy == 'SCAM':
-            weighted_grad = grad * self.w[name]
-            flat = weighted_grad.view(-1)
-            topk_vals, topk_idx = flat.abs().topk(k)
-            mask = torch.zeros_like(flat)
-            mask[topk_idx] = self.w[name].view(-1)[topk_idx]
-            mask = mask * (k / mask.sum())
-            comp = param.grad.clone() * mask.view(param.grad.size())
-        else:
-            raise ValueError(f"Unknown strategy {self.strategy}")
-        # update error buffers
-        if self.error_correction == 'EF':
-            self.e[name] += param.grad - comp
-        elif self.error_correction == 'EF21':
-            self.g[name] += comp
-            return self.g[name]
-        return comp
+            # apply strategy
+            if self.strategy == 'TopK':
+                flat = grad.view(-1)
+                topk_vals, topk_idx = flat.abs().topk(k)
+                mask = torch.zeros_like(flat, dtype=torch.bool)
+                mask.scatter_(0, topk_idx, True)
+                comp = mask.view(param.grad.size()) * grad
+            elif self.strategy == 'ImpK':
+                weighted_grad = grad * self.w[name]
+                flat = weighted_grad.view(-1)
+                topk_vals, topk_idx = flat.abs().topk(k)
+                mask = torch.zeros_like(flat, dtype=torch.bool)
+                mask.scatter_(0, topk_idx, True)
+                comp_flat = flat * mask
+                comp_flat = comp_flat * (k / self.w[name].view(-1)[topk_idx].sum())
+                comp = comp_flat.view(param.grad.size())
+            elif self.strategy == 'SCAM':
+                weighted_grad = grad * self.w[name]
+                flat = weighted_grad.view(-1)
+                topk_vals, topk_idx = flat.abs().topk(k)
+                mask = torch.zeros_like(flat)
+                mask[topk_idx] = self.w[name].view(-1)[topk_idx]
+                mask = mask * (k / mask.sum())
+                comp = param.grad * mask.view(param.grad.size())
+            else:
+                raise ValueError(f"Unknown strategy {self.strategy}")
+
+            # update error buffers without autograd
+            if self.error_correction == 'EF':
+                self.e[name].add_(param.grad.detach() - comp)
+            elif self.error_correction == 'EF21':
+                self.g[name].add_(comp)
+                return self.g[name]
+            return comp

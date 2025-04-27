@@ -24,8 +24,6 @@ def train(model, optimizer, compressor, trainloader, testloader, num_epochs, lr,
             loss.backward()
             
             for name, param in model.named_parameters():
-                if 'ln' in name:
-                    continue
                 param.grad.copy_(compressor.compress(name, param))
             
             optimizer.step()
