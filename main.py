@@ -15,14 +15,14 @@ from torch.optim import AdamW
 
 if __name__ == "__main__":
     train_inputs, val_inputs, test_inputs = get_datasets()
-    trainloader = DataLoader(train_inputs, batch_size=1, shuffle=True)
+    trainloader = DataLoader(train_inputs, batch_size=24, shuffle=True)
     testloader = DataLoader(val_inputs, batch_size=1, shuffle=False)
     device = get_device()
 
     config = {
         'param_usage': 0.01,
         'num_restarts': 1,
-        'num_epochs': 2,
+        'num_epochs': 1,
     }
 
     # Обновленный список конфигураций компрессии
@@ -37,13 +37,43 @@ if __name__ == "__main__":
         #     'eta': 0.0,
         #     'num_steps': 0,
         # },
+        {
+            'name': 'TopK_EF',
+            'strategy': 'TopK',
+            'error_correction': 'EF',
+            'update_task': None,
+            'update_kwargs': {},
+            'lr': 0.002,
+            'eta': 0.0,
+            'num_steps': 0,
+        },
+        {
+            'name': 'TopK_EF',
+            'strategy': 'TopK',
+            'error_correction': 'EF',
+            'update_task': None,
+            'update_kwargs': {},
+            'lr': 0.005,
+            'eta': 0.0,
+            'num_steps': 0,
+        },
+        {
+            'name': 'TopK_EF',
+            'strategy': 'TopK',
+            'error_correction': 'EF',
+            'update_task': None,
+            'update_kwargs': {},
+            'lr': 0.01,
+            'eta': 0.0,
+            'num_steps': 0,
+        },
         # {
         #     'name': 'TopK_EF',
         #     'strategy': 'TopK',
         #     'error_correction': 'EF',
         #     'update_task': None,
         #     'update_kwargs': {},
-        #     'lr': 0.01,
+        #     'lr': 0.02,
         #     'eta': 0.0,
         #     'num_steps': 0,
         # },
@@ -54,39 +84,39 @@ if __name__ == "__main__":
         #     'update_task': 'mirror_descent_full',
         #     'update_kwargs': {'lambda_value': 0.01, 'start': 'ones'},
         #     'lr': 0.01,
-        #     'eta': 7.0,
+        #     'eta': 1e4,
         #     'num_steps': 25,
         # },
-        {
-            'name': 'ImpK_c_EF',
-            'strategy': 'ImpK',
-            'error_correction': 'EF',
-            'update_task': 'gradient_descent_full',
-            'update_kwargs': {'scale': 1.0, 'start': 'ones'},
-            'lr': 0.01,
-            'eta': 7.0,
-            'num_steps': 25,
-        },
-        {
-            'name': 'SCAM_b_EF',
-            'strategy': 'SCAM',
-            'error_correction': 'EF',
-            'update_task': 'mirror_descent_full',
-            'update_kwargs': {'lambda_value': 0.01, 'start': 'ones'},
-            'lr': 0.01,
-            'eta': 7.0,
-            'num_steps': 25,
-        },
-        {
-            'name': 'SCAM_c_EF',
-            'strategy': 'SCAM',
-            'error_correction': 'EF',
-            'update_task': 'gradient_descent_full',
-            'update_kwargs': {'scale': 1.0, 'start': 'ones'},
-            'lr': 0.01,
-            'eta': 7.0,
-            'num_steps': 25,
-        },
+        # {
+        #     'name': 'ImpK_c_EF',
+        #     'strategy': 'ImpK',
+        #     'error_correction': 'EF',
+        #     'update_task': 'gradient_descent_full',
+        #     'update_kwargs': {'scale': 1.0, 'start': 'ones'},
+        #     'lr': 0.01,
+        #     'eta': 1e6,
+        #     'num_steps': 25,
+        # },
+        # {
+        #     'name': 'SCAM_b_EF',
+        #     'strategy': 'SCAM',
+        #     'error_correction': 'EF',
+        #     'update_task': 'mirror_descent_full',
+        #     'update_kwargs': {'lambda_value': 0.01, 'start': 'ones'},
+        #     'lr': 0.01,
+        #     'eta': 1e4,
+        #     'num_steps': 25,
+        # },
+        # {
+        #     'name': 'SCAM_c_EF',
+        #     'strategy': 'SCAM',
+        #     'error_correction': 'EF',
+        #     'update_task': 'gradient_descent_full',
+        #     'update_kwargs': {'scale': 1.0, 'start': 'ones'},
+        #     'lr': 0.01,
+        #     'eta': 1e6,
+        #     'num_steps': 25,
+        # },
     ]
 
     train_log, train_ppl_log = {}, {}
@@ -103,11 +133,13 @@ if __name__ == "__main__":
         error_correction = cfg['error_correction']
         update_task = cfg['update_task']
         update_kwargs = cfg.get('update_kwargs', {})
+        start = update_kwargs.get('start', '')
         lr = cfg['lr']
         eta = cfg.get('eta', 0.0)
         num_steps = cfg.get('num_steps', 0)
+        dict_name = f'{strategy}_{start}_{lr}'
 
-        train_log[name], train_ppl_log[name], test_log[name], test_ppl_log[name] = [], [], [], []
+        train_log[dict_name], train_ppl_log[dict_name], test_log[dict_name], test_ppl_log[dict_name] = [], [], [], []
         
         for num_restart in range(num_restarts):
             set_seed(52 + num_restart)
@@ -152,10 +184,10 @@ if __name__ == "__main__":
             print(val_losses)
             print("# Test Perplexity")
             print(val_ppls)
-            train_log[name].append(train_losses)
-            train_ppl_log[name].append(train_ppls)
-            test_log[name].append(val_losses)
-            test_ppl_log[name].append(val_ppls)
+            train_log[dict_name].append(train_losses)
+            train_ppl_log[dict_name].append(train_ppls)
+            test_log[dict_name].append(val_losses)
+            test_ppl_log[dict_name].append(val_ppls)
 
     print("# Train Loss")
     print(train_log)
@@ -179,17 +211,17 @@ if __name__ == "__main__":
         writer.writeheader()
 
         for compress_config in compress_configs:
-            compression_type = compress_config['strategy']
-            start = compress_config.get('update_task', '')
+            strategy = compress_config['strategy']
+            start = update_kwargs.get('start', '')
             lr = compress_config.get('lr', '')
             eta = compress_config.get('eta', '')
             num_steps = compress_config.get('num_steps', '')
 
-            name = f'{compression_type}_{param_usage*100:.0f}%_{lr}_{"EF" if "EF" in compression_type else ""}'
+            name = f'{strategy}_{param_usage*100:.0f}%_{lr}_{"EF" if "EF" in strategy else ""}'
 
             for epoch in range(num_epochs):
                 for restart in range(num_restarts):
-                    dict_name = f'{compression_type}_{start}_{lr}'
+                    dict_name = f'{strategy}_{start}_{lr}'
                     writer.writerow({
                         'type': name,
                         'epoch': epoch,
@@ -206,7 +238,7 @@ if __name__ == "__main__":
     for compress_config in compress_configs:
         compression_type = compress_config['strategy']
 
-        start = compress_config.get('update_task', '')
+        start = update_kwargs.get('start', '')
         lr = compress_config.get('lr', '')
         eta = compress_config.get('eta', '')
         num_steps = compress_config.get('num_steps', '')
