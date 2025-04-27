@@ -25,7 +25,7 @@ class Compressor:
                 self.g[name] = torch.zeros_like(param)
 
     def skip(self, name):
-        return 'ln' in name
+        return 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
 
     def update(self, batch, lr, eta, num_steps):
         if not self.update_task:
@@ -50,6 +50,12 @@ class Compressor:
                 **full_kwargs,
                 num_steps=num_steps
             )
+            for name, param in self.model.named_parameters():
+                if self.skip(name):
+                    continue
+                plt.title(f"Impact for {name}")
+                plt.hist(self.w[name].view(-1).detach().cpu())
+                plt.show()
             return
         # per-parameter update
         update_fn = {
@@ -76,8 +82,6 @@ class Compressor:
             )
 
     def compress(self, name, param):
-        if self.skip(name):
-            return torch.zeros_like(param.grad)
         k = ceil(self.k * param.numel())
         grad = param.grad
         if self.error_correction == 'EF':

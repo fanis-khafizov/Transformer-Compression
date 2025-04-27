@@ -95,7 +95,8 @@ def mirror_descent_full(model, batch, impacts, lr, eta, lambda_value, num_steps,
         base_grads = [g + errors[name] for g, (name, _) in zip(base_grads, model.named_parameters())]
 
     # 2) инициализируем impacts
-    skip = lambda n: 'ln' in n
+    skip = lambda name: 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
+
     for name, param in model.named_parameters():
         if start == 'ones':
             imp = torch.ones_like(param)
@@ -149,7 +150,8 @@ def gradient_descent_full(model, batch, impacts, lr, eta, num_steps, start=None,
         base_grads = [g + errors[name] for g, (name, _) in zip(base_grads, model.named_parameters())]
 
     # 2) инициализируем impacts
-    skip = lambda n: 'ln' in n
+    skip = lambda name: 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
+
     for name, param in model.named_parameters():
         if start == 'ones':
             imp = torch.ones_like(param)

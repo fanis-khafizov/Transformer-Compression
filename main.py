@@ -15,7 +15,7 @@ from torch.optim import AdamW
 
 if __name__ == "__main__":
     train_inputs, val_inputs, test_inputs = get_datasets()
-    trainloader = DataLoader(train_inputs, batch_size=24, shuffle=True)
+    trainloader = DataLoader(train_inputs, batch_size=1, shuffle=True)
     testloader = DataLoader(val_inputs, batch_size=1, shuffle=False)
     device = get_device()
 
@@ -25,35 +25,14 @@ if __name__ == "__main__":
         'num_epochs': 1,
     }
 
-    # Обновленный список конфигураций компрессии
     compress_configs = [
-        # {
-        #     'name': 'TopK',
-        #     'strategy': 'TopK',
-        #     'error_correction': 'none',
-        #     'update_task': None,
-        #     'update_kwargs': {},
-        #     'lr': 0.01,
-        #     'eta': 0.0,
-        #     'num_steps': 0,
-        # },
         {
-            'name': 'TopK_EF',
+            'name': 'TopK',
             'strategy': 'TopK',
-            'error_correction': 'EF',
+            'error_correction': 'none',
             'update_task': None,
             'update_kwargs': {},
-            'lr': 0.002,
-            'eta': 0.0,
-            'num_steps': 0,
-        },
-        {
-            'name': 'TopK_EF',
-            'strategy': 'TopK',
-            'error_correction': 'EF',
-            'update_task': None,
-            'update_kwargs': {},
-            'lr': 0.005,
+            'lr': 0.01,
             'eta': 0.0,
             'num_steps': 0,
         },
@@ -67,56 +46,46 @@ if __name__ == "__main__":
             'eta': 0.0,
             'num_steps': 0,
         },
-        # {
-        #     'name': 'TopK_EF',
-        #     'strategy': 'TopK',
-        #     'error_correction': 'EF',
-        #     'update_task': None,
-        #     'update_kwargs': {},
-        #     'lr': 0.02,
-        #     'eta': 0.0,
-        #     'num_steps': 0,
-        # },
-        # {
-        #     'name': 'ImpK_b_EF',
-        #     'strategy': 'ImpK',
-        #     'error_correction': 'EF',
-        #     'update_task': 'mirror_descent_full',
-        #     'update_kwargs': {'lambda_value': 0.01, 'start': 'ones'},
-        #     'lr': 0.01,
-        #     'eta': 1e4,
-        #     'num_steps': 25,
-        # },
-        # {
-        #     'name': 'ImpK_c_EF',
-        #     'strategy': 'ImpK',
-        #     'error_correction': 'EF',
-        #     'update_task': 'gradient_descent_full',
-        #     'update_kwargs': {'scale': 1.0, 'start': 'ones'},
-        #     'lr': 0.01,
-        #     'eta': 1e6,
-        #     'num_steps': 25,
-        # },
-        # {
-        #     'name': 'SCAM_b_EF',
-        #     'strategy': 'SCAM',
-        #     'error_correction': 'EF',
-        #     'update_task': 'mirror_descent_full',
-        #     'update_kwargs': {'lambda_value': 0.01, 'start': 'ones'},
-        #     'lr': 0.01,
-        #     'eta': 1e4,
-        #     'num_steps': 25,
-        # },
-        # {
-        #     'name': 'SCAM_c_EF',
-        #     'strategy': 'SCAM',
-        #     'error_correction': 'EF',
-        #     'update_task': 'gradient_descent_full',
-        #     'update_kwargs': {'scale': 1.0, 'start': 'ones'},
-        #     'lr': 0.01,
-        #     'eta': 1e6,
-        #     'num_steps': 25,
-        # },
+        {
+            'name': 'ImpK_b_EF',
+            'strategy': 'ImpK',
+            'error_correction': 'EF',
+            'update_task': 'mirror_descent_full',
+            'update_kwargs': {'lambda_value': 1e-6, 'start': 'ones'},
+            'lr': 0.01,
+            'eta': 1e3,
+            'num_steps': 50,
+        },
+        {
+            'name': 'ImpK_c_EF',
+            'strategy': 'ImpK',
+            'error_correction': 'EF',
+            'update_task': 'gradient_descent_full',
+            'update_kwargs': {'scale': 2.0, 'start': 'ones'},
+            'lr': 0.01,
+            'eta': 1e7,
+            'num_steps': 50,
+        },
+        {
+            'name': 'SCAM_b_EF',
+            'strategy': 'SCAM',
+            'error_correction': 'EF',
+            'update_task': 'mirror_descent_full',
+            'update_kwargs': {'lambda_value': 1e-6, 'start': 'ones'},
+            'lr': 0.01,
+            'eta': 1e3,
+            'num_steps': 50,
+        },
+        {
+            'name': 'SCAM_c_EF',
+            'strategy': 'SCAM',
+            'error_correction': 'EF',
+            'update_task': 'gradient_descent_full',
+            'update_kwargs': {'scale': 2.0, 'start': 'ones'},
+            'lr': 0.01,
+            'eta': 1e7,
+            'num_steps': 50,
+        },
     ]
 
     train_log, train_ppl_log = {}, {}
@@ -148,7 +117,7 @@ if __name__ == "__main__":
             tokenizer.pad_token = tokenizer.eos_token
             config = GPT2Config(vocab_size=tokenizer.vocab_size)
             model = GPT2LMHeadModel(config)
-            model.loss_type = "lm"
+            model.loss_type = None
             model = model.to(device)
 
             # Создаем компрессор по единому формату
