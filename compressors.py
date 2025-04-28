@@ -1,5 +1,4 @@
 from math import ceil
-from matplotlib import pyplot as plt
 import torch
 from descent import gradient_descent, mirror_descent, gradient_descent_full, mirror_descent_full
 

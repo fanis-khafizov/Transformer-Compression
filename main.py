@@ -1,22 +1,18 @@
-import train
-import compressors
-from utils import set_seed, get_datasets, get_device, plot_and_save_results
-import torch.optim as optim
-import torch.nn as nn
-import numpy as np
-import datetime
 import os
-import csv
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
-from torch.utils.data import DataLoader
-from torch.optim import AdamW
-import wandb
 from dotenv import load_dotenv
-load_dotenv()
-# Авторизация в W&B через API ключ из переменной окружения
-wandb.login(key=os.environ.get("WANDB_API_KEY"))
+
+import wandb
+from torch.utils.data import DataLoader
+
+from utils import get_datasets, get_device
 from compress_config import CompressionConfig
-from experiment import Experiment, ExperimentManager
+from experiment import Experiment
+
+# Load environment variables
+load_dotenv()
+
+# Authenticate with W&B using API key from environment variable
+wandb.login(key=os.environ.get("WANDB_API_KEY"))
 
 if __name__ == "__main__":
     train_inputs, val_inputs, test_inputs = get_datasets()
@@ -43,9 +39,6 @@ if __name__ == "__main__":
         CompressionConfig(train_config, name='SCAM_b_EF', strategy='SCAM', error_correction='EF', update_task='mirror_descent_full', update_kwargs={'lambda_value':1e-6,'start':'ones'}, lr=0.01, eta=1e3, num_steps=50),
         CompressionConfig(train_config, name='SCAM_c_EF', strategy='SCAM', error_correction='EF', update_task='gradient_descent_full', update_kwargs={'scale':2.0,'start':'ones'}, lr=0.01, eta=1e7, num_steps=50),
     ]
-    experiments = [
-        Experiment(cfg, trainloader, testloader, device, param_usage, num_epochs, num_restarts)
-        for cfg in configs
-    ]
-    manager = ExperimentManager(experiments)
-    manager.run_all()
+    for cfg in configs:
+        experiment = Experiment(cfg, trainloader, testloader, device, param_usage, num_epochs, num_restarts)
+        experiment.run()

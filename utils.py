@@ -2,7 +2,7 @@ import random
 import numpy as np
 import torch
 from datasets import load_dataset
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import GPT2Tokenizer
 import os
 import matplotlib.pyplot as plt
 

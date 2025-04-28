@@ -1,11 +1,11 @@
 import wandb
-from logger import TrainerLogger
-from train import train
 import torch.optim as optim
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
-from utils import set_seed, get_device, plot_and_save_results
-import compressors
 
+from logger import TrainerLogger
+from train import train
+from utils import set_seed, plot_and_save_results
+import compressors
 
 class Experiment:
     def __init__(self, config, trainloader, testloader, device, param_usage, num_epochs, num_restarts):
@@ -63,12 +63,3 @@ class Experiment:
         # Сохранение и визуализация результатов
         self.logger.save_csv()
         self.logger.plot(plot_and_save_results)
-
-
-class ExperimentManager:
-    def __init__(self, experiments: list):
-        self.experiments = experiments
-
-    def run_all(self):
-        for exp in self.experiments:
-            exp.run()
