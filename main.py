@@ -5,7 +5,8 @@ import wandb
 from torch.utils.data import DataLoader
 
 from utils import get_datasets, get_device
-from compress_config import CompressionConfig
+from config import ExperimentConfig
+from optimizers import CAdamW
 from experiment import Experiment
 
 # Load environment variables
@@ -32,12 +33,12 @@ if __name__ == "__main__":
 
     # Создание списка объектов конфигов
     configs = [
-        CompressionConfig(train_config, name='TopK', strategy='TopK', lr=0.01),
-        CompressionConfig(train_config, name='TopK_EF', strategy='TopK', error_correction='EF', lr=0.01),
-        CompressionConfig(train_config, name='ImpK_b_EF', strategy='ImpK', error_correction='EF', update_task='mirror_descent_full', update_kwargs={'lambda_value':1e-6,'start':'ones'}, lr=0.01, eta=1e3, num_steps=50),
-        CompressionConfig(train_config, name='ImpK_c_EF', strategy='ImpK', error_correction='EF', update_task='gradient_descent_full', update_kwargs={'scale':2.0,'start':'ones'}, lr=0.01, eta=1e7, num_steps=50),
-        CompressionConfig(train_config, name='SCAM_b_EF', strategy='SCAM', error_correction='EF', update_task='mirror_descent_full', update_kwargs={'lambda_value':1e-6,'start':'ones'}, lr=0.01, eta=1e3, num_steps=50),
-        CompressionConfig(train_config, name='SCAM_c_EF', strategy='SCAM', error_correction='EF', update_task='gradient_descent_full', update_kwargs={'scale':2.0,'start':'ones'}, lr=0.01, eta=1e7, num_steps=50),
+        ExperimentConfig(train_config, name='TopK', strategy='TopK', lr=0.01, optimizer=CAdamW),
+        ExperimentConfig(train_config, name='TopK_EF', strategy='TopK', error_correction='EF', lr=0.01, optimizer=CAdamW),
+        ExperimentConfig(train_config, name='ImpK_b_EF', strategy='ImpK', error_correction='EF', update_task='mirror_descent_full', update_kwargs={'lambda_value':1e-6,'start':'ones'}, lr=0.01, eta=1e3, num_steps=50, optimizer=CAdamW),
+        ExperimentConfig(train_config, name='ImpK_c_EF', strategy='ImpK', error_correction='EF', update_task='gradient_descent_full', update_kwargs={'scale':2.0,'start':'ones'}, lr=0.01, eta=1e7, num_steps=50, optimizer=CAdamW),
+        ExperimentConfig(train_config, name='SCAM_b_EF', strategy='SCAM', error_correction='EF', update_task='mirror_descent_full', update_kwargs={'lambda_value':1e-6,'start':'ones'}, lr=0.01, eta=1e3, num_steps=50, optimizer=CAdamW),
+        ExperimentConfig(train_config, name='SCAM_c_EF', strategy='SCAM', error_correction='EF', update_task='gradient_descent_full', update_kwargs={'scale':2.0,'start':'ones'}, lr=0.01, eta=1e7, num_steps=50, optimizer=CAdamW),
     ]
     for cfg in configs:
         experiment = Experiment(cfg, trainloader, testloader, device, param_usage, num_epochs, num_restarts)

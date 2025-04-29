@@ -1,5 +1,4 @@
 import wandb
-import torch.optim as optim
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 
 from logger import TrainerLogger
@@ -40,7 +39,12 @@ class Experiment:
                 update_kwargs=self.config.update_kwargs
             )
 
-            optimizer = optim.SGD(model.parameters(), lr=self.config.lr, momentum=0.9, weight_decay=5e-4)
+            # Instantiate optimizer from config
+            optimizer = self.config.optimizer(
+                compressor=compressor,
+                lr=self.config.lr,
+                **self.config.optimizer_kwargs
+            )
 
             # Тренировка и валидация с логированием через logger
             train_losses, train_ppls, val_losses, val_ppls = train(
