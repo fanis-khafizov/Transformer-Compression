@@ -1,4 +1,5 @@
 import wandb
+import torch
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 
 from logger import TrainerLogger
@@ -28,7 +29,9 @@ class Experiment:
             tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
             tokenizer.pad_token = tokenizer.eos_token
             model_config = GPT2Config(vocab_size=tokenizer.vocab_size)
-            model = GPT2LMHeadModel(model_config).to(self.device)
+            model = GPT2LMHeadModel(model_config)
+            # model = torch.compile(model)
+            model.to(self.device)
 
             compressor = compressors.Compressor(
                 model=model,
@@ -66,4 +69,4 @@ class Experiment:
         wandb.finish()
         # Сохранение и визуализация результатов
         self.logger.save_csv()
-        self.logger.plot(plot_and_save_results)
+        # self.logger.plot(plot_and_save_results)
