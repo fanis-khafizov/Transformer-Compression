@@ -107,6 +107,12 @@ class Compressor:
                 mask[topk_idx] = self.w[name].view(-1)[topk_idx]
                 mask = mask * (k / mask.sum())
                 comp = param.grad * mask.view(param.grad.size())
+            elif self.strategy == 'SCAM_TopK':
+                flat = grad.view(-1)
+                topk_vals, topk_idx = flat.abs().topk(k)
+                mask = torch.zeros_like(flat, dtype=torch.bool)
+                mask.scatter_(0, topk_idx, True)
+                comp = mask.view(param.grad.size()) * param.grad
             else:
                 raise ValueError(f"Unknown strategy {self.strategy}")
 
