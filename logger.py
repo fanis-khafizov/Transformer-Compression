@@ -52,14 +52,14 @@ class TrainerLogger:
         # Инициализация
         train_losses = [[0.0]*epochs for _ in range(restarts)]
         train_ppls = [[0.0]*epochs for _ in range(restarts)]
-        val_losses   = [[0.0]*epochs for _ in range(restarts)]
-        val_ppls     = [[0.0]*epochs for _ in range(restarts)]
+        val_losses = [[0.0]*epochs for _ in range(restarts)]
+        val_ppls = [[0.0]*epochs for _ in range(restarts)]
         for rec in self.records:
             r = rec['restart']
             e = rec['epoch']
             train_losses[r][e] = rec['train_loss']
-            train_ppls[r][e]  = rec['train_ppl']
-            val_losses[r][e]  = rec['val_loss']
-            val_ppls[r][e]    = rec['val_ppl']
+            train_ppls[r][e] = rec['train_ppl']
+            val_losses[r][e] = rec['val_loss']
+            val_ppls[r][e] = rec['val_ppl']
         # Вызов функции построения графиков
         plot_func(train_losses, train_ppls, val_losses, val_ppls, self.name)

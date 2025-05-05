@@ -30,8 +30,8 @@ class Experiment:
             tokenizer.pad_token = tokenizer.eos_token
             model_config = GPT2Config(vocab_size=tokenizer.vocab_size)
             model = GPT2LMHeadModel(model_config)
-            # model = torch.compile(model)
             model.to(self.device)
+            model = torch.compile(model)
 
             compressor = compressors.Compressor(
                 model=model,
