@@ -23,9 +23,6 @@ def train(model, optimizer, compressor, trainloader, testloader, num_epochs, lr,
             loss = outputs.loss
             loss.backward()
             
-            for name, param in model.named_parameters():
-                param.grad.copy_(compressor.compress(name, param))
-            
             optimizer.step()
 
             train_loss += loss.item()

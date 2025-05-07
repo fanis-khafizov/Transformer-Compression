@@ -111,11 +111,7 @@ class CAdamW(Optimizer):
                 if name is None:
                     raise KeyError(f"Parameter not found in compressor mapping: {p}")
                 grad = self.compressor.compress(name, p)
-                # if gradient is zero after compression: apply weight decay and skip update
-                if torch.count_nonzero(grad) == 0:
-                    if weight_decay != 0:
-                        p.mul_(1 - lr * weight_decay)
-                    continue
+
                 state = self.state[p]
                 # increment step
                 step = state.get('step', 0) + 1
