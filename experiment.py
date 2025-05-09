@@ -33,7 +33,7 @@ class Experiment:
             model_config = GPT2Config(vocab_size=tokenizer.vocab_size)
             model = GPT2LMHeadModel(model_config)
             model.to(self.device)
-            # model = torch.compile(model)
+            model = torch.compile(model)
 
             compressor = compressors.Compressor(
                 model=model,
