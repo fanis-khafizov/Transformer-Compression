@@ -1,92 +1,7 @@
 import torch
 from torch.func import functional_call
 
-def mirror_descent(model, batch, param_name, impact, lr, eta, lambda_value, num_steps, start=None, error=None):
-
-    original_param = dict(model.named_parameters())[param_name]
-
-    outputs = model(batch, labels=batch)
-    loss = outputs.loss
-    
-    if error is None:
-        param_grad = torch.autograd.grad(loss, original_param)[0]
-    else:
-        param_grad = torch.autograd.grad(loss, original_param)[0] + error
-    
-    if start == 'ones':
-        with torch.no_grad():
-            impact = torch.ones_like(param_grad) / param_grad.numel()
-    
-    impact = impact.detach().requires_grad_(True)
-
-    new_params = {param_name: original_param.clone()}
-
-    for _ in range(num_steps):
-        # Update parameter using impact
-        param_new = original_param - lr * impact * param_grad.detach()
-        new_params[param_name] = param_new
-        # Compute outputs with new parameters
-        outputs_new = functional_call(model, new_params, (batch,), {'labels': batch})
-        # Compute new loss
-        loss_new = outputs_new.loss
-
-        # Compute gradient of new loss w.r.t. impact
-        grad_impact = torch.autograd.grad(loss_new, impact)[0]
-
-        with torch.no_grad():
-            impact_update = torch.pow(impact, 1/(1+eta*lambda_value)).detach() * torch.exp(-(eta/(1+eta*lambda_value)) * (grad_impact))
-            impact = impact_update / impact_update.sum()
-
-        # Ensure impact requires grad for the next iteration
-        impact.requires_grad_(True)
-
-    return impact.detach()
-
-
-def gradient_descent(model, batch, param_name, impact, lr, eta, num_steps, start=None, scale=1.0, error=None):
-    
-    original_param = dict(model.named_parameters())[param_name]
-
-    outputs = model(batch, labels=batch)
-    loss = outputs.loss
-    
-    if error is None:
-        param_grad = torch.autograd.grad(loss, original_param)[0]
-    else:
-        param_grad = torch.autograd.grad(loss, original_param)[0] + error
-    
-    if start == 'ones':
-        impact = torch.ones_like(param_grad)
-    elif start == 'center':
-        impact = (torch.ones_like(param_grad) / 2)
-
-    impact = impact.clone().detach().requires_grad_(True)
-    
-    new_params = {name: param.clone() for name, param in model.named_parameters()}
-
-    for _ in range(num_steps):
-        # Update parameter using impact
-        param_new = original_param - lr * impact * param_grad
-        # Create new parameter dictionary
-        new_params[param_name] = param_new
-        # Compute outputs with new parameters
-        outputs_new = functional_call(model, new_params, (batch,), {'labels': batch})
-        # Compute new loss
-        loss_new = outputs_new.loss
-
-        # Compute gradient of new loss w.r.t. impact
-        grad_impact = torch.autograd.grad(loss_new, impact)[0]
-
-        with torch.no_grad():
-            impact = impact.detach() - eta * lr * grad_impact.detach()
-            impact = torch.clip(impact, 0, scale)
-        
-        # Ensure impact requires grad for the next iteration
-        impact.requires_grad_(True)
-
-    return impact.detach()
-
-def mirror_descent_full(model, batch, impacts, lr, eta, lambda_value, num_steps, start=None, errors=None):
+def mirror_descent(model, batch, lr, eta, lambda_value, num_steps, errors=None):
     # 1) считаем один раз начальный градиент по весам
     outputs = model(batch, labels=batch)
     loss = outputs.loss
@@ -95,22 +10,15 @@ def mirror_descent_full(model, batch, impacts, lr, eta, lambda_value, num_steps,
         base_grads = [g + errors[name] for g, (name, _) in zip(base_grads, model.named_parameters())]
 
     # 2) инициализируем impacts
-    skip = lambda name: 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
-
-    for name, param in model.named_parameters():
-        if start == 'ones':
-            imp = torch.ones_like(param)
-        elif start == 'center':
-            imp = torch.ones_like(param).div_(2)
-        else:
-            imp = impacts[name]
-        impacts[name] = imp.detach().requires_grad_(True)
+    impacts = {name: torch.ones_like(param, requires_grad=True) for name, param in model.named_parameters()}
 
     # 3) подготовим «новые» параметры на каждый шаг
     new_params = {n: p.clone() for n, p in model.named_parameters()}
 
     # список тех impact‑тензоров, для которых мы считаем градиент
+    skip = lambda name: 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
     impact_keys = [n for n in impacts if not skip(n)]
+
     for _ in range(num_steps):
         # a) обновляем new_params по старым весам и base_grads
         for (name, orig_p), g in zip(model.named_parameters(), base_grads):
@@ -141,7 +49,7 @@ def mirror_descent_full(model, batch, impacts, lr, eta, lambda_value, num_steps,
 
     return impacts
 
-def gradient_descent_full(model, batch, impacts, lr, eta, num_steps, start=None, scale=1.0, errors=None):
+def gradient_descent(model, batch, lr, eta, num_steps, scale=1.0, errors=None):
     # 1) считаем один раз начальный градиент по весам
     outputs = model(batch, labels=batch)
     loss = outputs.loss
@@ -150,22 +58,15 @@ def gradient_descent_full(model, batch, impacts, lr, eta, num_steps, start=None,
         base_grads = [g + errors[name] for g, (name, _) in zip(base_grads, model.named_parameters())]
 
     # 2) инициализируем impacts
-    skip = lambda name: 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
-
-    for name, param in model.named_parameters():
-        if start == 'ones':
-            imp = torch.ones_like(param)
-        elif start == 'center':
-            imp = torch.ones_like(param).div_(2)
-        else:
-            imp = impacts[name]
-        impacts[name] = imp.detach().requires_grad_(True)
+    impacts = {name: torch.ones_like(param, requires_grad=True) for name, param in model.named_parameters()}
 
     # 3) подготовим «новые» параметры на каждый шаг
     new_params = {n: p.clone() for n, p in model.named_parameters()}
 
     # список тех impact‑тензоров, для которых мы считаем градиент
+    skip = lambda name: 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
     impact_keys = [n for n in impacts if not skip(n)]
+
     for _ in range(num_steps):
         # a) обновляем new_params по старым весам и base_grads
         for (name, orig_p), g in zip(model.named_parameters(), base_grads):

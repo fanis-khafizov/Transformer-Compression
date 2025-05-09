@@ -11,9 +11,9 @@ class CSGD(Optimizer):
     def __init__(self,
                  compressor: Compressor,
                  lr: float = 0.01,
-                 momentum: float = 0,
+                 momentum: float = 0.9,
                  dampening: float = 0,
-                 weight_decay: float = 0,
+                 weight_decay: float = 0.01,
                  nesterov: bool = False):
         if not isinstance(compressor, Compressor):
             raise TypeError("compressor must be an instance of Compressor")

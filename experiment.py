@@ -2,7 +2,6 @@ import wandb
 import torch
 from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
 
-from logger import TrainerLogger
 from train import train
 from utils import set_seed, plot_and_save_results
 import compressors
@@ -16,13 +15,16 @@ class Experiment:
         self.param_usage = param_usage
         self.num_epochs = num_epochs
         self.num_restarts = num_restarts
-        self.logger = TrainerLogger(config.name, param_usage)
 
     def run(self):
-        # Инициализация W&B для этого эксперимента
-        self.config.init_wandb()
-
         for restart in range(self.num_restarts):
+            wandb.init(
+                project=self.config.project_name,
+                name=f"{self.config.name}_restart_{restart}",
+                config={**self.config.train_config, **self.config.to_dict()},
+                reinit=True
+            )
+
             set_seed(52 + restart)
 
             # Создание модели и компрессора
@@ -31,7 +33,7 @@ class Experiment:
             model_config = GPT2Config(vocab_size=tokenizer.vocab_size)
             model = GPT2LMHeadModel(model_config)
             model.to(self.device)
-            model = torch.compile(model)
+            # model = torch.compile(model)
 
             compressor = compressors.Compressor(
                 model=model,
@@ -39,6 +41,7 @@ class Experiment:
                 strategy=self.config.strategy,
                 error_correction=self.config.error_correction,
                 update_task=self.config.update_task,
+                lr=self.config.lr,
                 update_kwargs=self.config.update_kwargs
             )
 
@@ -57,16 +60,8 @@ class Experiment:
                 trainloader=self.trainloader,
                 testloader=self.testloader,
                 num_epochs=self.num_epochs,
-                lr=self.config.lr,
-                eta=self.config.eta,
-                num_steps=self.config.num_steps,
                 device=self.device,
-                restart=restart,
-                logger=self.logger
             )
 
         # Завершение W&B
         wandb.finish()
-        # Сохранение и визуализация результатов
-        self.logger.save_csv()
-        # self.logger.plot(plot_and_save_results)

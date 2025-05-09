@@ -45,16 +45,3 @@ class ExperimentConfig:
             "optimizer": self.optimizer.__name__,
             "optimizer_kwargs": self.optimizer_kwargs,
         }
-
-    def init_wandb(self):
-        wandb.init(
-            project=self.project_name,
-            name=self.name,
-            config={**self.train_config, **self.to_dict()},
-            reinit=True
-        )
-
-    def get_dict_name(self):
-        start = self.update_kwargs.get("start", "")
-        return f"{self.strategy}_{start}_{self.lr}"
-# -----------------------------

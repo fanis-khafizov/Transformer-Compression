@@ -1,14 +1,15 @@
 from math import ceil
 import torch
-from descent import gradient_descent, mirror_descent, gradient_descent_full, mirror_descent_full
+from descent import gradient_descent, mirror_descent
 
 # Generic configurable compressor to select strategy, error correction, and update task
 class Compressor:
-    def __init__(self, model, k, strategy='TopK', error_correction='none', update_task=None, update_kwargs=None):
+    def __init__(self, model, k, strategy='TopK', error_correction='none', update_task=None, lr=None, update_kwargs=None):
         self.model = model
         self.k = k
         self.strategy = strategy
         self.error_correction = error_correction
+        self.lr = lr
         self.update_task = update_task
         self.update_kwargs = update_kwargs or {}
         self.w = {}
@@ -26,57 +27,39 @@ class Compressor:
     def skip(self, name):
         return 'ln' in name or 'bias' in name or 'wte' in name or 'wpe' in name
 
-    def update(self, batch, lr, eta, num_steps):
+    def update(self, batch):
         if not self.update_task:
             return
-        # full update across all parameters
-        if self.update_task in ('mirror_descent_full', 'gradient_descent_full'):
-            update_fn = {
-                'mirror_descent_full': mirror_descent_full,
-                'gradient_descent_full': gradient_descent_full
-            }[self.update_task]
-            # call full-impact update
-            # include error buffer if EF
-            full_kwargs = dict(self.update_kwargs)
-            if self.error_correction == 'EF':
-                full_kwargs['errors'] = self.e
-            self.w = update_fn(
-                self.model,
-                batch,
-                self.w,
-                lr,
-                eta,
-                **full_kwargs,
-                num_steps=num_steps
-            )
-            return
-        # per-parameter update
+        
         update_fn = {
             'mirror_descent': mirror_descent,
             'gradient_descent': gradient_descent
         }[self.update_task]
-        for name, param in self.model.named_parameters():
-            if self.skip(name):
-                continue
-            impact = self.w[name]
-            # call per-parameter update with possible EF buffer
-            per_kwargs = dict(self.update_kwargs)
-            if self.error_correction == 'EF':
-                per_kwargs['error'] = self.e[name]
-            self.w[name] = update_fn(
-                self.model,
-                batch,
-                name,
-                impact,
-                lr,
-                eta,
-                **per_kwargs,
-                num_steps=num_steps
-            )
+        
+        full_kwargs = dict(self.update_kwargs)
+
+        if self.error_correction == 'EF':
+            full_kwargs['errors'] = self.e
+        
+        self.w = update_fn(
+            self.model,
+            batch,
+            lr=self.lr,
+            **full_kwargs,
+        )
+        # for name, param in self.model.named_parameters():
+        #     if not self.skip(name):
+        #         plt.hist(self.w[name].view(-1).cpu().numpy(), bins=100, alpha=0.5, label=name)
+        #         plt.title(f"Histogram of {name}")
+        #         plt.xlabel("Value")
+        #         plt.ylabel("Frequency")
+        #         plt.legend()
+        #         plt.show()
 
     def compress(self, name, param):
         with torch.no_grad():
             k = ceil(self.k * param.numel())
+            
             grad = param.grad.detach()
             if self.error_correction == 'EF':
                 grad = grad + self.e[name]
