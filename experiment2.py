@@ -41,7 +41,7 @@ if __name__ == "__main__":
         ExperimentConfig(train_config, project_name=project_name, name='TopK_EF_0.0001', strategy='TopK', error_correction='EF', lr=0.0001, optimizer=CAdamW),
         ExperimentConfig(train_config, project_name=project_name, name='TopK_EF21_0.0001', strategy='TopK', error_correction='EF21', lr=0.0001, optimizer=CAdamW),
         ExperimentConfig(train_config, project_name=project_name, name='SCAM_TopK_0.001', strategy='SCAM_TopK', error_correction='EF', lr=0.001, optimizer=CAdamW),
-        # ExperimentConfig(train_config, project_name=project_name, name='SCAM_b_EF_0.001', strategy='SCAM', error_correction='EF', update_task='mirror_descent', update_kwargs={'lambda_value':1e-4,'eta':1e7,'num_steps':50}, lr=0.001, optimizer=CAdamW),
+        ExperimentConfig(train_config, project_name=project_name, name='SCAM_b_EF_0.001', strategy='SCAM', error_correction='EF', update_task='mirror_descent', update_kwargs={'lambda_value':1e-4,'eta':1e7,'num_steps':50}, lr=0.001, optimizer=CAdamW),
     ]
     for cfg in configs:
         experiment = Experiment(cfg, trainloader, testloader, device, param_usage, num_epochs, num_restarts)
